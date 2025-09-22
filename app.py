@@ -329,29 +329,40 @@ def extract_movie_players(movie_url, soup, headers, title):
     """
     Extract player URLs for a movie
     """
-    # Find player tabs
-    player_tabs = soup.find('ul', class_='muvipro-player-tabs')
     player_urls = []
     
-    if player_tabs:
-        # Extract all player links
-        links = player_tabs.find_all('a', href=True)
-        for i, link in enumerate(links):
-            player_url = link['href']
-            server_name = link.get_text().strip() or f"Server {i+1}"
-            
-            # Make absolute URL if needed
-            if player_url.startswith('/'):
-                player_url = urljoin(movie_url, player_url)
-            elif not player_url.startswith('http'):
-                player_url = urljoin(movie_url, player_url)
-            
-            player_urls.append({
-                'server_name': server_name,
-                'player_page_url': player_url
-            })
+    # Only process player tabs if soup is provided (from main extraction)
+    if soup:
+        # Find player tabs
+        player_tabs = soup.find('ul', class_='muvipro-player-tabs')
+        
+        if player_tabs:
+            # Extract all player links
+            links = player_tabs.find_all('a', href=True)
+            for i, link in enumerate(links):
+                player_url = link['href']
+                server_name = link.get_text().strip() or f"Server {i+1}"
+                
+                # Make absolute URL if needed
+                if player_url.startswith('/'):
+                    player_url = urljoin(movie_url, player_url)
+                elif not player_url.startswith('http'):
+                    player_url = urljoin(movie_url, player_url)
+                
+                player_urls.append({
+                    'server_name': server_name,
+                    'player_page_url': player_url
+                })
+        else:
+            # If no player tabs found, try common player URL patterns
+            for i in range(1, 7):
+                player_url = f"{movie_url}?player={i}" if '?' not in movie_url else f"{movie_url}&player={i}"
+                player_urls.append({
+                    'server_name': f"Server {i}",
+                    'player_page_url': player_url
+                })
     else:
-        # If no player tabs found, try common player URL patterns
+        # For direct episode extraction, use common player URL patterns
         for i in range(1, 7):
             player_url = f"{movie_url}?player={i}" if '?' not in movie_url else f"{movie_url}&player={i}"
             player_urls.append({
@@ -440,6 +451,31 @@ def search_api():
         
     except Exception as e:
         return jsonify({"error": f"Search error: {str(e)}"}), 500
+
+@app.route('/api/extract-episode', methods=['POST'])
+def extract_episode_api():
+    try:
+        data = request.get_json()
+        url = data.get('url')
+        
+        if not url:
+            return jsonify({"error": "URL is required"}), 400
+        
+        # Extract player URLs for episode
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        result = extract_movie_players(url, None, headers, "Episode")
+        
+        # Return just the players array
+        if 'players' in result:
+            return jsonify(result['players'])
+        else:
+            return jsonify([]), 400
+        
+    except Exception as e:
+        return jsonify({"error": f"Episode extraction error: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
